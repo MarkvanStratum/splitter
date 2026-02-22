@@ -147,7 +147,21 @@ app.get("/r/:id", (req, res) => {
   }
 
   const target = pickWeighted(links);
-  res.redirect(302, target);
+
+// Get everything after "?"
+const queryString = req.originalUrl.split("?")[1];
+
+let finalUrl = target;
+
+if (queryString) {
+  if (target.includes("?")) {
+    finalUrl = target + "&" + queryString;
+  } else {
+    finalUrl = target + "?" + queryString;
+  }
+}
+
+res.redirect(302, finalUrl);
 });
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
