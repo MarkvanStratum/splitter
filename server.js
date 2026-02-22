@@ -62,10 +62,11 @@ app.get("/admin", (req, res) => {
   const list = Object.entries(campaigns)
     .filter(([id, campaign]) => {
       if (!filterCountry) return true;
-      return String(campaign.country || "").trim().toLowerCase() === filterCountry.toLowerCase();
+      return String(campaign.country || "").toLowerCase() === filterCountry.toLowerCase();
     })
-  .map(([id, campaign]) => {
-    const links = campaign.links;
+    .map(([id, campaign]) => {
+      const links = campaign.links || [];
+
       const linkRows = links.map(l =>
         `<li>${escapeHtml(l.url)} — <b>${escapeHtml(l.weight)}</b>%</li>`
       ).join("");
@@ -73,9 +74,15 @@ app.get("/admin", (req, res) => {
       return `
         <div style="border:1px solid #ddd;padding:12px;border-radius:10px;margin:12px 0;">
           <div><b>ID:</b> ${escapeHtml(id)}</div>
-<div><b>Name:</b> ${escapeHtml(campaign.name)}</div>
-<div><b>Country:</b> ${escapeHtml(campaign.country)}</div>
-          <div><b>Redirect link:</b> <a href="/r/${escapeHtml(id)}" target="_blank">/r/${escapeHtml(id)}</a></div>
+          <div><b>Name:</b> ${escapeHtml(campaign.name)}</div>
+          <div><b>Country:</b> ${escapeHtml(campaign.country)}</div>
+          <div>
+            <b>Redirect link:</b>
+            <a href="/r/${escapeHtml(id)}" target="_blank">
+              ${req.protocol}://${req.get("host")}/r/${escapeHtml(id)}
+            </a>
+          </div>
+
           <div style="margin-top:8px;"><b>Links:</b></div>
           <ul>${linkRows || "<li><i>No links yet</i></li>"}</ul>
 
@@ -91,14 +98,13 @@ app.get("/admin", (req, res) => {
     .join("");
 
   res.send(`
-    <div  res.send(`
     <div style="font-family:system-ui,Segoe UI,Arial;padding:20px;max-width:900px;margin:auto;">
       <h1>Splitter Admin</h1>
 
-      <form method="GET" action="/admin" style="margin:14px 0; display:flex; gap:8px; align-items:center;">
-        <input name="country" placeholder="Filter by country (e.g. NL, US)" value="${escapeHtml(req.query.country || "")}" style="padding:8px;" />
+      <form method="GET" action="/admin" style="margin:14px 0; display:flex; gap:8px;">
+        <input name="country" placeholder="Filter by country" value="${escapeHtml(req.query.country || "")}" style="padding:8px;" />
         <button style="padding:10px 16px;cursor:pointer;">Filter</button>
-        <a href="/admin" style="padding:10px 16px; text-decoration:none; border:1px solid #ddd; border-radius:8px; color:#111;">Clear</a>
+        <a href="/admin" style="padding:10px 16px; text-decoration:none; border:1px solid #ddd;">Clear</a>
       </form>
 
       <form method="POST" action="/admin/create" style="margin:14px 0; display:flex; gap:8px;">
@@ -106,14 +112,8 @@ app.get("/admin", (req, res) => {
         <input name="country" placeholder="Country (e.g. NL, US)" style="padding:8px;" />
         <button style="padding:10px 16px;cursor:pointer;">+ Create</button>
       </form>
-</form>
 
-      ${list || "<p>No campaigns yet. Click “Create new campaign”.</p>"}
-
-      <hr style="margin:24px 0;" />
-      <p style="color:#555;">
-        Tip: Weights don’t have to add up to 100 — they’re treated as relative. (10/20/70 works great.)
-      </p>
+      ${list || "<p>No campaigns yet.</p>"}
     </div>
   `);
 });
