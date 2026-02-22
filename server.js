@@ -57,15 +57,24 @@ app.get("/", (req, res) => {
 });
 
 app.get("/admin", (req, res) => {
+  const filterCountry = (req.query.country || "").trim();
+
   const list = Object.entries(campaigns)
-    .map(([id, links]) => {
+    .filter(([id, campaign]) => {
+      if (!filterCountry) return true;
+      return String(campaign.country || "").trim().toLowerCase() === filterCountry.toLowerCase();
+    })
+  .map(([id, campaign]) => {
+    const links = campaign.links;
       const linkRows = links.map(l =>
         `<li>${escapeHtml(l.url)} — <b>${escapeHtml(l.weight)}</b>%</li>`
       ).join("");
 
       return `
         <div style="border:1px solid #ddd;padding:12px;border-radius:10px;margin:12px 0;">
-          <div><b>Campaign:</b> ${escapeHtml(id)}</div>
+          <div><b>ID:</b> ${escapeHtml(id)}</div>
+<div><b>Name:</b> ${escapeHtml(campaign.name)}</div>
+<div><b>Country:</b> ${escapeHtml(campaign.country)}</div>
           <div><b>Redirect link:</b> <a href="/r/${escapeHtml(id)}" target="_blank">/r/${escapeHtml(id)}</a></div>
           <div style="margin-top:8px;"><b>Links:</b></div>
           <ul>${linkRows || "<li><i>No links yet</i></li>"}</ul>
@@ -82,12 +91,22 @@ app.get("/admin", (req, res) => {
     .join("");
 
   res.send(`
+    <div  res.send(`
     <div style="font-family:system-ui,Segoe UI,Arial;padding:20px;max-width:900px;margin:auto;">
       <h1>Splitter Admin</h1>
 
-      <form method="POST" action="/admin/create" style="margin:14px 0;">
-        <button style="padding:10px 16px;cursor:pointer;">+ Create new campaign</button>
+      <form method="GET" action="/admin" style="margin:14px 0; display:flex; gap:8px; align-items:center;">
+        <input name="country" placeholder="Filter by country (e.g. NL, US)" value="${escapeHtml(req.query.country || "")}" style="padding:8px;" />
+        <button style="padding:10px 16px;cursor:pointer;">Filter</button>
+        <a href="/admin" style="padding:10px 16px; text-decoration:none; border:1px solid #ddd; border-radius:8px; color:#111;">Clear</a>
       </form>
+
+      <form method="POST" action="/admin/create" style="margin:14px 0; display:flex; gap:8px;">
+        <input name="name" placeholder="Campaign name" required style="padding:8px;" />
+        <input name="country" placeholder="Country (e.g. NL, US)" style="padding:8px;" />
+        <button style="padding:10px 16px;cursor:pointer;">+ Create</button>
+      </form>
+</form>
 
       ${list || "<p>No campaigns yet. Click “Create new campaign”.</p>"}
 
@@ -102,9 +121,14 @@ app.get("/admin", (req, res) => {
 // --- admin actions (no extra software) ---
 app.post("/admin/create", (req, res) => {
   const id = generateId();
-  campaigns[id] = [];
 
-  saveData(); // <-- ADD THIS
+  campaigns[id] = {
+    name: req.body.name || "Unnamed",
+    country: req.body.country || "ALL",
+    links: []
+  };
+
+  saveData();
 
   res.redirect("/admin");
 });
@@ -129,13 +153,20 @@ app.post("/admin/add-link", (req, res) => {
     return res.status(400).send("Weight must be a number 0 or greater.");
   }
 
-  campaigns[campaignId].push({ url, weight: w });
-res.redirect("/admin");
-});
+  campaigns[campaignId].links.push({ url, weight: w });
 
+  saveData();
+
+  res.redirect("/admin");
+});
 // --- redirect endpoint ---
 app.get("/r/:id", (req, res) => {
-  const links = campaigns[req.params.id];
+  const campaign = campaigns[req.params.id];
+if (!campaign) {
+  return res.status(404).send("Campaign not found");
+}
+
+const links = campaign.links;
 
   if (!links || links.length === 0) {
     return res.status(404).send("Campaign not found or has no links");
