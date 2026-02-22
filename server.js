@@ -1,4 +1,5 @@
 import express from "express";
+import fs from "fs";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -6,8 +7,21 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// In-memory storage (we'll make it permanent later)
-const campaigns = {};
+// Persistent storage
+const DATA_FILE = "./data.json";
+
+let campaigns = {};
+
+// Load data on startup
+if (fs.existsSync(DATA_FILE)) {
+  const raw = fs.readFileSync(DATA_FILE);
+  campaigns = JSON.parse(raw);
+}
+
+// Save function
+function saveData() {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(campaigns, null, 2));
+}
 
 // --- helpers ---
 function generateId() {
@@ -89,6 +103,9 @@ app.get("/admin", (req, res) => {
 app.post("/admin/create", (req, res) => {
   const id = generateId();
   campaigns[id] = [];
+
+  saveData(); // <-- ADD THIS
+
   res.redirect("/admin");
 });
 
@@ -113,7 +130,7 @@ app.post("/admin/add-link", (req, res) => {
   }
 
   campaigns[campaignId].push({ url, weight: w });
-  res.redirect("/admin");
+res.redirect("/admin");
 });
 
 // --- redirect endpoint ---
