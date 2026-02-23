@@ -1,5 +1,4 @@
 import express from "express";
-import fs from "fs";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -14,21 +13,6 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Persistent storage
-const DATA_FILE = "./data.json";
-
-let campaigns = {};
-
-// Load data on startup
-if (fs.existsSync(DATA_FILE)) {
-  const raw = fs.readFileSync(DATA_FILE);
-  campaigns = JSON.parse(raw);
-}
-
-// Save function
-function saveData() {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(campaigns, null, 2));
-}
-
 // --- helpers ---
 function generateId() {
   return Math.random().toString(36).substring(2, 8);
@@ -63,38 +47,32 @@ app.get("/", (req, res) => {
 });
 
 app.get("/admin", async (req, res) => {
-  const { data, error } = await supabase.from("campaigns").select("*");
+
+  const { data, error } = await supabase
+    .from("campaigns")
+    .select("*");
 
   if (error) {
-    return res.send("Error: " + error.message);
+    return res.send("Error loading campaigns: " + error.message);
   }
 
-  const campaigns = {};
-  (data || []).forEach((c) => {
-    campaigns[c.id] = {
-      name: c.name,
-      country: c.country,
-      links: c.links || []
-    };
-  });
-  const rows = Object.entries(campaigns)
-  .map(([id, campaign]) => {
+  const rows = data.map(campaign => {
+    const id = campaign.id;
+
     const fullLink = `${req.protocol}://${req.get("host")}/r/${id}?ref=MA576&sub_id=clickid&source=source_id&subsource=sub_source_id&sub1=title&sub2=image&sub3=firstname&sub4=lastname&sub5=addrsss&sub6=postcode&sub7=city&sub8=country&sub9=email&sub10=123456890&pixel=fbpixel`;
 
     return `
       <tr>
         <td>${escapeHtml(campaign.name)}</td>
         <td>${escapeHtml(campaign.country)}</td>
-        <td>${campaign.links.length}</td>
+        <td>${(campaign.links || []).length}</td>
         <td style="display:flex; gap:10px;">
           <a href="/admin/${id}">Open</a>
           <button onclick="copyLink('${fullLink}')">Copy</button>
         </td>
       </tr>
     `;
-  })
-  .join("");
-    
+  }).join("");
 
   res.send(`
     <div style="font-family:system-ui;padding:20px;max-width:900px;margin:auto;">
@@ -123,47 +101,50 @@ function copyLink(link) {
   alert("Link copied!");
 }
 </script>
-
 `);
 });
 
-app.get("/admin/:id", (req, res) => {
-  const id = req.params.id;
-  const campaign = campaigns[id];
+app.get("/admin/:id", async (req, res) => {
+  const { id } = req.params;
 
-  if (!campaign) {
+  const { data, error } = await supabase
+    .from("campaigns")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (error || !data) {
     return res.send("Campaign not found");
   }
 
-  const linkRows = campaign.links.map(l =>
-    `<li>${escapeHtml(l.url)} — ${l.weight}%</li>`
+  const links = data.links || [];
+
+  const linkRows = links.map(l =>
+    `<li>${escapeHtml(l.url)} — <b>${escapeHtml(l.weight)}</b>%</li>`
   ).join("");
 
   res.send(`
-    <div style="font-family:system-ui;padding:20px;max-width:900px;margin:auto;">
-      <a href="/admin">← Back</a>
+    <div style="font-family:system-ui,Segoe UI,Arial;padding:20px;max-width:900px;margin:auto;">
+      <h1>Campaign: ${escapeHtml(data.name)}</h1>
+      <p><b>Country:</b> ${escapeHtml(data.country || "-")}</p>
 
-      <h1>${escapeHtml(campaign.name)}</h1>
-
-      <p><b>Country:</b> ${escapeHtml(campaign.country)}</p>
-
-      <p>
-        <b>Link:</b><br>
-        <a href="/r/${id}" target="_blank">
-          ${req.protocol}://${req.get("host")}/r/${id}
+      <p><b>Redirect link:</b> 
+        <a href="/r/${escapeHtml(id)}" target="_blank">
+          /r/${escapeHtml(id)}
         </a>
       </p>
 
       <h3>Links</h3>
-      <ul>${linkRows}</ul>
+      <ul>${linkRows || "<li>No links yet</li>"}</ul>
 
-      <h3>Add Link</h3>
       <form method="POST" action="/admin/add-link">
-        <input type="hidden" name="campaignId" value="${id}" />
-        <input name="url" placeholder="https://example.com" required style="padding:8px; width:300px;" />
-        <input name="weight" type="number" placeholder="Weight %" required style="padding:8px;" />
-        <button style="padding:8px;">Add</button>
+        <input type="hidden" name="campaignId" value="${escapeHtml(id)}" />
+        <input name="url" placeholder="https://example.com" required />
+        <input name="weight" type="number" placeholder="Weight %" required />
+        <button>Add link</button>
       </form>
+
+      <p><a href="/admin">← Back</a></p>
     </div>
   `);
 });
@@ -188,66 +169,55 @@ app.post("/admin/create", async (req, res) => {
   res.redirect("/admin");
 });
 
-app.post("/admin/add-link", (req, res) => {
+app.post("/admin/add-link", async (req, res) => {
   const { campaignId, url, weight } = req.body;
 
-  if (!campaigns[campaignId]) {
-    return res.status(404).send("Campaign not found");
+  const { data, error } = await supabase
+    .from("campaigns")
+    .select("links")
+    .eq("id", campaignId)
+    .single();
+
+  if (error || !data) {
+    return res.send("Campaign not found");
   }
 
-  // basic URL sanity check
-  try {
-    const u = new URL(url);
-    if (!["http:", "https:"].includes(u.protocol)) throw new Error("Bad protocol");
-  } catch {
-    return res.status(400).send('Invalid URL. Must start with "http://" or "https://".');
-  }
+  const links = data.links || [];
+  links.push({ url, weight: Number(weight) });
 
-  const w = Number(weight);
-  if (!Number.isFinite(w) || w < 0) {
-    return res.status(400).send("Weight must be a number 0 or greater.");
-  }
-
-  campaigns[campaignId].links.push({ url, weight: w });
-
-  saveData();
+  await supabase
+    .from("campaigns")
+    .update({ links })
+    .eq("id", campaignId);
 
   res.redirect("/admin/" + campaignId);
 });
+
 // --- redirect endpoint ---
-app.get("/r/:id", (req, res) => {
-  const campaign = campaigns[req.params.id];
-if (!campaign) {
-  return res.status(404).send("Campaign not found");
-}
+app.get("/r/:id", async (req, res) => {
+  const { id } = req.params;
 
-const links = campaign.links;
+  const { data, error } = await supabase
+    .from("campaigns")
+    .select("links")
+    .eq("id", id)
+    .single();
 
-  if (!links || links.length === 0) {
-    return res.status(404).send("Campaign not found or has no links");
+  if (error || !data) {
+    return res.status(404).send("Campaign not found");
   }
 
-  const total = links.reduce((sum, l) => sum + Number(l.weight || 0), 0);
-  if (total <= 0) {
-    return res.status(400).send("All weights are 0. Add a link with weight > 0.");
+  const links = data.links || [];
+
+  if (!links.length) {
+    return res.status(404).send("No links in campaign");
   }
 
   const target = pickWeighted(links);
 
-// Get everything after "?"
-const queryString = req.originalUrl.split("?")[1];
+  const query = req.url.includes("?") ? req.url.substring(req.url.indexOf("?")) : "";
 
-let finalUrl = target;
-
-if (queryString) {
-  if (target.includes("?")) {
-    finalUrl = target + "&" + queryString;
-  } else {
-    finalUrl = target + "?" + queryString;
-  }
-}
-
-res.redirect(302, finalUrl);
+  res.redirect(302, target + query);
 });
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
