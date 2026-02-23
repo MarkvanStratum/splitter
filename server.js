@@ -67,9 +67,13 @@ app.get("/admin", async (req, res) => {
         <td>${escapeHtml(campaign.country)}</td>
         <td>${(campaign.links || []).length}</td>
         <td style="display:flex; gap:10px;">
-          <a href="/admin/${id}">Open</a>
-          <button onclick="copyLink('${fullLink}')">Copy</button>
-        </td>
+  <a href="/admin/${id}">Open</a>
+  <button onclick="copyLink('${fullLink}')">Copy</button>
+  <form method="POST" action="/admin/delete" onsubmit="return confirm('Delete this campaign?');">
+    <input type="hidden" name="campaignId" value="${id}" />
+    <button style="color:red;">Delete</button>
+  </form>
+</td>
       </tr>
     `;
   }).join("");
@@ -218,6 +222,22 @@ app.get("/r/:id", async (req, res) => {
   const query = req.url.includes("?") ? req.url.substring(req.url.indexOf("?")) : "";
 
   res.redirect(302, target + query);
+});
+
+
+app.post("/admin/delete", async (req, res) => {
+  const { campaignId } = req.body;
+
+  const { error } = await supabase
+    .from("campaigns")
+    .delete()
+    .eq("id", campaignId);
+
+  if (error) {
+    return res.send("Error deleting campaign: " + error.message);
+  }
+
+  res.redirect("/admin");
 });
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
