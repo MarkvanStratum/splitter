@@ -58,17 +58,23 @@ app.get("/", (req, res) => {
 
 app.get("/admin", (req, res) => {
   const rows = Object.entries(campaigns)
-    .map(([id, campaign]) => {
-      return `
-        <tr>
-          <td>${escapeHtml(campaign.name)}</td>
-          <td>${escapeHtml(campaign.country)}</td>
-          <td>${campaign.links.length}</td>
-          <td><a href="/admin/${id}">Open</a></td>
-        </tr>
-      `;
-    })
-    .join("");
+  .map(([id, campaign]) => {
+    const fullLink = `${req.protocol}://${req.get("host")}/r/${id}?ref=MA576&sub_id=clickid&source=source_id&subsource=sub_source_id&sub1=title&sub2=image&sub3=firstname&sub4=lastname&sub5=addrsss&sub6=postcode&sub7=city&sub8=country&sub9=email&sub10=123456890&pixel=fbpixel`;
+
+    return `
+      <tr>
+        <td>${escapeHtml(campaign.name)}</td>
+        <td>${escapeHtml(campaign.country)}</td>
+        <td>${campaign.links.length}</td>
+        <td style="display:flex; gap:10px;">
+          <a href="/admin/${id}">Open</a>
+          <button onclick="copyLink('${fullLink}')">Copy</button>
+        </td>
+      </tr>
+    `;
+  })
+  .join("");
+    
 
   res.send(`
     <div style="font-family:system-ui;padding:20px;max-width:900px;margin:auto;">
@@ -90,7 +96,15 @@ app.get("/admin", (req, res) => {
         ${rows}
       </table>
     </div>
-  `);
+
+<script>
+function copyLink(link) {
+  navigator.clipboard.writeText(link);
+  alert("Link copied!");
+}
+</script>
+
+`);
 });
 
 app.get("/admin/:id", (req, res) => {
