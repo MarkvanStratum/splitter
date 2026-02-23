@@ -57,63 +57,79 @@ app.get("/", (req, res) => {
 });
 
 app.get("/admin", (req, res) => {
-  const filterCountry = (req.query.country || "").trim();
-
-  const list = Object.entries(campaigns)
-    .filter(([id, campaign]) => {
-      if (!filterCountry) return true;
-      return String(campaign.country || "").toLowerCase() === filterCountry.toLowerCase();
-    })
+  const rows = Object.entries(campaigns)
     .map(([id, campaign]) => {
-      const links = campaign.links || [];
-
-      const linkRows = links.map(l =>
-        `<li>${escapeHtml(l.url)} — <b>${escapeHtml(l.weight)}</b>%</li>`
-      ).join("");
-
       return `
-        <div style="border:1px solid #ddd;padding:12px;border-radius:10px;margin:12px 0;">
-          <div><b>ID:</b> ${escapeHtml(id)}</div>
-          <div><b>Name:</b> ${escapeHtml(campaign.name)}</div>
-          <div><b>Country:</b> ${escapeHtml(campaign.country)}</div>
-          <div>
-            <b>Redirect link:</b>
-            <a href="/r/${escapeHtml(id)}" target="_blank">
-              ${req.protocol}://${req.get("host")}/r/${escapeHtml(id)}
-            </a>
-          </div>
-
-          <div style="margin-top:8px;"><b>Links:</b></div>
-          <ul>${linkRows || "<li><i>No links yet</i></li>"}</ul>
-
-          <form method="POST" action="/admin/add-link" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
-            <input type="hidden" name="campaignId" value="${escapeHtml(id)}" />
-            <input name="url" placeholder="https://example.com" style="padding:8px;min-width:260px;" required />
-            <input name="weight" type="number" min="0" step="1" placeholder="Weight %" style="padding:8px;width:120px;" required />
-            <button style="padding:8px 14px;cursor:pointer;">Add link</button>
-          </form>
-        </div>
+        <tr>
+          <td>${escapeHtml(campaign.name)}</td>
+          <td>${escapeHtml(campaign.country)}</td>
+          <td>${campaign.links.length}</td>
+          <td><a href="/admin/${id}">Open</a></td>
+        </tr>
       `;
     })
     .join("");
 
   res.send(`
-    <div style="font-family:system-ui,Segoe UI,Arial;padding:20px;max-width:900px;margin:auto;">
-      <h1>Splitter Admin</h1>
+    <div style="font-family:system-ui;padding:20px;max-width:900px;margin:auto;">
+      <h1>Campaigns</h1>
 
-      <form method="GET" action="/admin" style="margin:14px 0; display:flex; gap:8px;">
-        <input name="country" placeholder="Filter by country" value="${escapeHtml(req.query.country || "")}" style="padding:8px;" />
-        <button style="padding:10px 16px;cursor:pointer;">Filter</button>
-        <a href="/admin" style="padding:10px 16px; text-decoration:none; border:1px solid #ddd;">Clear</a>
-      </form>
-
-      <form method="POST" action="/admin/create" style="margin:14px 0; display:flex; gap:8px;">
+      <form method="POST" action="/admin/create" style="margin-bottom:20px; display:flex; gap:8px;">
         <input name="name" placeholder="Campaign name" required style="padding:8px;" />
-        <input name="country" placeholder="Country (e.g. NL, US)" style="padding:8px;" />
-        <button style="padding:10px 16px;cursor:pointer;">+ Create</button>
+        <input name="country" placeholder="Country" style="padding:8px;" />
+        <button style="padding:8px 16px;">Create</button>
       </form>
 
-      ${list || "<p>No campaigns yet.</p>"}
+      <table border="1" cellpadding="10" cellspacing="0" style="width:100%; border-collapse:collapse;">
+        <tr>
+          <th>Name</th>
+          <th>Country</th>
+          <th>Links</th>
+          <th></th>
+        </tr>
+        ${rows}
+      </table>
+    </div>
+  `);
+});
+
+app.get("/admin/:id", (req, res) => {
+  const id = req.params.id;
+  const campaign = campaigns[id];
+
+  if (!campaign) {
+    return res.send("Campaign not found");
+  }
+
+  const linkRows = campaign.links.map(l =>
+    `<li>${escapeHtml(l.url)} — ${l.weight}%</li>`
+  ).join("");
+
+  res.send(`
+    <div style="font-family:system-ui;padding:20px;max-width:900px;margin:auto;">
+      <a href="/admin">← Back</a>
+
+      <h1>${escapeHtml(campaign.name)}</h1>
+
+      <p><b>Country:</b> ${escapeHtml(campaign.country)}</p>
+
+      <p>
+        <b>Link:</b><br>
+        <a href="/r/${id}" target="_blank">
+          ${req.protocol}://${req.get("host")}/r/${id}
+        </a>
+      </p>
+
+      <h3>Links</h3>
+      <ul>${linkRows}</ul>
+
+      <h3>Add Link</h3>
+      <form method="POST" action="/admin/add-link">
+        <input type="hidden" name="campaignId" value="${id}" />
+        <input name="url" placeholder="https://example.com" required style="padding:8px; width:300px;" />
+        <input name="weight" type="number" placeholder="Weight %" required style="padding:8px;" />
+        <button style="padding:8px;">Add</button>
+      </form>
     </div>
   `);
 });
@@ -157,7 +173,7 @@ app.post("/admin/add-link", (req, res) => {
 
   saveData();
 
-  res.redirect("/admin");
+  res.redirect("/admin/" + campaignId);
 });
 // --- redirect endpoint ---
 app.get("/r/:id", (req, res) => {
