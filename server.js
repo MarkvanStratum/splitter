@@ -1,5 +1,11 @@
 import express from "express";
 import fs from "fs";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY
+);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -56,7 +62,21 @@ app.get("/", (req, res) => {
   Go to <a href="/admin">/admin</a> to create campaigns.`);
 });
 
-app.get("/admin", (req, res) => {
+app.get("/admin", async (req, res) => {
+  const { data, error } = await supabase.from("campaigns").select("*");
+
+  if (error) {
+    return res.send("Error: " + error.message);
+  }
+
+  const campaigns = {};
+  (data || []).forEach((c) => {
+    campaigns[c.id] = {
+      name: c.name,
+      country: c.country,
+      links: c.links || []
+    };
+  });
   const rows = Object.entries(campaigns)
   .map(([id, campaign]) => {
     const fullLink = `${req.protocol}://${req.get("host")}/r/${id}?ref=MA576&sub_id=clickid&source=source_id&subsource=sub_source_id&sub1=title&sub2=image&sub3=firstname&sub4=lastname&sub5=addrsss&sub6=postcode&sub7=city&sub8=country&sub9=email&sub10=123456890&pixel=fbpixel`;
@@ -149,16 +169,21 @@ app.get("/admin/:id", (req, res) => {
 });
 
 // --- admin actions (no extra software) ---
-app.post("/admin/create", (req, res) => {
+app.post("/admin/create", async (req, res) => {
   const id = generateId();
 
-  campaigns[id] = {
+  const campaign = {
+    id,
     name: req.body.name || "Unnamed",
     country: req.body.country || "ALL",
     links: []
   };
 
-  saveData();
+  const { error } = await supabase.from("campaigns").insert([campaign]);
+
+  if (error) {
+    return res.send("Error: " + error.message);
+  }
 
   res.redirect("/admin");
 });
