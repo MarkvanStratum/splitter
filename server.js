@@ -124,9 +124,25 @@ app.get("/admin/:id", async (req, res) => {
 
   const links = data.links || [];
 
-  const linkRows = links.map(l =>
-    `<li>${escapeHtml(l.url)} — <b>${escapeHtml(l.weight)}</b>%</li>`
-  ).join("");
+  const linkRows = links.map((l, index) => `
+  <li style="margin-bottom:10px;">
+    ${escapeHtml(l.url)} — 
+
+    <form method="POST" action="/admin/update-link" style="display:inline;">
+      <input type="hidden" name="campaignId" value="${escapeHtml(id)}" />
+      <input type="hidden" name="index" value="${index}" />
+      <input name="weight" type="number" value="${escapeHtml(l.weight)}" style="width:60px;" />
+      %
+      <button>Update</button>
+    </form>
+
+    <form method="POST" action="/admin/delete-link" style="display:inline;" onsubmit="return confirm('Delete this link?');">
+      <input type="hidden" name="campaignId" value="${escapeHtml(id)}" />
+      <input type="hidden" name="index" value="${index}" />
+      <button style="color:red;">Delete</button>
+    </form>
+  </li>
+`).join("");
 
   res.send(`
     <div style="font-family:system-ui,Segoe UI,Arial;padding:20px;max-width:900px;margin:auto;">
@@ -295,6 +311,64 @@ app.post("/admin/update", async (req, res) => {
   if (error) {
     return res.send("Error updating campaign: " + error.message);
   }
+
+  res.redirect("/admin/" + campaignId);
+});
+
+app.post("/admin/update-link", async (req, res) => {
+  const { campaignId, index, weight } = req.body;
+
+  const { data, error } = await supabase
+    .from("campaigns")
+    .select("links")
+    .eq("id", campaignId)
+    .single();
+
+  if (error || !data) {
+    return res.send("Campaign not found");
+  }
+
+  const links = data.links || [];
+
+  if (!links[index]) {
+    return res.send("Link not found");
+  }
+
+  links[index].weight = Number(weight);
+
+  await supabase
+    .from("campaigns")
+    .update({ links })
+    .eq("id", campaignId);
+
+  res.redirect("/admin/" + campaignId);
+});
+
+app.post("/admin/delete-link", async (req, res) => {
+  const { campaignId, index } = req.body;
+
+  const { data, error } = await supabase
+    .from("campaigns")
+    .select("links")
+    .eq("id", campaignId)
+    .single();
+
+  if (error || !data) {
+    return res.send("Campaign not found");
+  }
+
+  const links = data.links || [];
+
+  if (!links[index]) {
+    return res.send("Link not found");
+  }
+
+  links.splice(index, 1);
+
+  await supabase
+    .from("campaigns")
+    .update({ links })
+    .eq("id", campaignId);
 
   res.redirect("/admin/" + campaignId);
 });
