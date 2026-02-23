@@ -69,6 +69,7 @@ app.get("/admin", async (req, res) => {
         <td style="display:flex; gap:10px;">
   <a href="/admin/${id}">Open</a>
   <button onclick="copyLink('${fullLink}')">Copy</button>
+  <a href="/admin/${id}/edit">Edit</a>
   <form method="POST" action="/admin/delete" onsubmit="return confirm('Delete this campaign?');">
     <input type="hidden" name="campaignId" value="${id}" />
     <button style="color:red;">Delete</button>
@@ -238,6 +239,64 @@ app.post("/admin/delete", async (req, res) => {
   }
 
   res.redirect("/admin");
+});
+
+
+
+app.get("/admin/:id/edit", async (req, res) => {
+  const { id } = req.params;
+
+  const { data, error } = await supabase
+    .from("campaigns")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (error || !data) {
+    return res.send("Campaign not found");
+  }
+
+  res.send(`
+    <div style="font-family:system-ui;padding:20px;max-width:900px;margin:auto;">
+      <h1>Edit Campaign</h1>
+
+      <form method="POST" action="/admin/update">
+        <input type="hidden" name="campaignId" value="${id}" />
+
+        <div style="margin-bottom:10px;">
+          <label>Name</label><br/>
+          <input name="name" value="${escapeHtml(data.name)}" required style="padding:8px;width:300px;" />
+        </div>
+
+        <div style="margin-bottom:10px;">
+          <label>Country</label><br/>
+          <input name="country" value="${escapeHtml(data.country)}" style="padding:8px;width:300px;" />
+        </div>
+
+        <button style="padding:10px 16px;">Save</button>
+      </form>
+
+      <p><a href="/admin">← Back</a></p>
+    </div>
+  `);
+});
+
+app.post("/admin/update", async (req, res) => {
+  const { campaignId, name, country } = req.body;
+
+  const { error } = await supabase
+    .from("campaigns")
+    .update({
+      name,
+      country
+    })
+    .eq("id", campaignId);
+
+  if (error) {
+    return res.send("Error updating campaign: " + error.message);
+  }
+
+  res.redirect("/admin/" + campaignId);
 });
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
