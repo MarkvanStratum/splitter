@@ -64,6 +64,19 @@ if (affiliateError) {
   );
 }
 
+const { data: conversionRows, error: conversionError } = await supabase
+  .from("conversion_decisions")
+  .select("*")
+  .order("created_at", { ascending: false })
+  .limit(200);
+
+if (conversionError) {
+  return res.send(
+    "Error loading conversion reporting: " +
+    conversionError.message
+  );
+}
+
   if (error) {
     return res.send("Error loading campaigns: " + error.message);
   }
@@ -120,6 +133,43 @@ const affiliateRows = (affiliateSettings || []).map(setting => `
   </tr>
 `).join("");
 
+const receivedCount = (conversionRows || []).length;
+
+const sentCount = (conversionRows || []).filter(
+  conversion => conversion.binom_sent
+).length;
+
+const notSentCount = receivedCount - sentCount;
+
+const conversionReportRows = (conversionRows || []).map(conversion => `
+  <tr>
+    <td>
+      ${escapeHtml(
+        conversion.created_at
+          ? new Date(conversion.created_at).toLocaleString()
+          : "-"
+      )}
+    </td>
+
+    <td>${escapeHtml(conversion.source || "-")}</td>
+
+    <td>${escapeHtml(conversion.clickid || "-")}</td>
+
+    <td>Yes</td>
+
+    <td>${conversion.binom_sent ? "Yes" : "No"}</td>
+
+    <td>
+      ${
+        conversion.binom_status !== null &&
+        conversion.binom_status !== undefined
+          ? escapeHtml(conversion.binom_status)
+          : "-"
+      }
+    </td>
+  </tr>
+`).join("");
+
   res.send(`
     <div style="font-family:system-ui;padding:20px;max-width:900px;margin:auto;">
       <h1>Campaigns</h1>
@@ -172,6 +222,41 @@ const affiliateRows = (affiliateSettings || []).map(setting => `
     <th>Change Percentage</th>
   </tr>
   ${affiliateRows || '<tr><td colspan="3">No affiliate settings yet</td></tr>'}
+</table>
+<h2 style="margin-top:40px;">Conversion Reporting</h2>
+
+<div style="display:flex;gap:40px;margin-bottom:20px;">
+  <div>
+    <strong>Conversions Received</strong><br>
+    ${receivedCount}
+  </div>
+
+  <div>
+    <strong>Sent to Binom</strong><br>
+    ${sentCount}
+  </div>
+
+  <div>
+    <strong>Not Sent to Binom</strong><br>
+    ${notSentCount}
+  </div>
+</div>
+
+<table border="1" cellpadding="10" cellspacing="0"
+       style="width:100%;border-collapse:collapse;">
+  <tr>
+    <th>Time</th>
+    <th>Affiliate</th>
+    <th>Click ID</th>
+    <th>Received</th>
+    <th>Sent to Binom</th>
+    <th>Binom Status</th>
+  </tr>
+
+  ${
+    conversionReportRows ||
+    '<tr><td colspan="6">No conversions yet</td></tr>'
+  }
 </table>
     </div>
 
@@ -558,6 +643,25 @@ app.get("/conversion", async (req, res) => {
 
     const binomResponse = await fetch(binomUrl);
     const binomText = await binomResponse.text();
+
+const { error: updateError } = await supabase
+  .from("conversion_decisions")
+  .update({
+    binom_sent: binomResponse.ok,
+    binom_status: binomResponse.status,
+    binom_response: binomText,
+    binom_sent_at: binomResponse.ok
+      ? new Date().toISOString()
+      : null
+  })
+  .eq("clickid", clickid);
+
+if (updateError) {
+  console.error(
+    "Error updating conversion reporting:",
+    updateError
+  );
+}
 
     console.log(
       "Binom postback:",
