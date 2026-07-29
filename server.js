@@ -52,6 +52,18 @@ app.get("/admin", async (req, res) => {
     .from("campaigns")
     .select("*");
 
+const { data: affiliateSettings, error: affiliateError } = await supabase
+  .from("affiliate_settings")
+  .select("*")
+  .order("source");
+
+if (affiliateError) {
+  return res.send(
+    "Error loading affiliate settings: " +
+    affiliateError.message
+  );
+}
+
   if (error) {
     return res.send("Error loading campaigns: " + error.message);
   }
@@ -79,6 +91,35 @@ app.get("/admin", async (req, res) => {
     `;
   }).join("");
 
+const affiliateRows = (affiliateSettings || []).map(setting => `
+  <tr>
+    <td>${escapeHtml(setting.source)}</td>
+    <td>${escapeHtml(setting.approval_percentage)}%</td>
+    <td>
+      <form method="POST" action="/admin/affiliate-setting">
+        <input
+          type="hidden"
+          name="source"
+          value="${escapeHtml(setting.source)}"
+        />
+
+        <input
+          type="number"
+          name="approval_percentage"
+          min="0"
+          max="100"
+          step="0.01"
+          value="${escapeHtml(setting.approval_percentage)}"
+          style="width:80px;"
+          required
+        />
+
+        <button>Save</button>
+      </form>
+    </td>
+  </tr>
+`).join("");
+
   res.send(`
     <div style="font-family:system-ui;padding:20px;max-width:900px;margin:auto;">
       <h1>Campaigns</h1>
@@ -98,6 +139,40 @@ app.get("/admin", async (req, res) => {
         </tr>
         ${rows}
       </table>
+<h2 style="margin-top:40px;">Affiliate Conversion Settings</h2>
+
+<form method="POST" action="/admin/affiliate-setting" style="margin-bottom:20px; display:flex; gap:8px;">
+  <input
+    name="source"
+    placeholder="Affiliate source"
+    required
+    style="padding:8px;"
+  />
+
+  <input
+    name="approval_percentage"
+    type="number"
+    min="0"
+    max="100"
+    step="0.01"
+    value="100"
+    required
+    style="padding:8px;width:100px;"
+  />
+
+  <button style="padding:8px 16px;">
+    Add affiliate
+  </button>
+</form>
+
+<table border="1" cellpadding="10" cellspacing="0" style="width:100%; border-collapse:collapse;">
+  <tr>
+    <th>Affiliate / Source</th>
+    <th>Current Percentage</th>
+    <th>Change Percentage</th>
+  </tr>
+  ${affiliateRows || '<tr><td colspan="3">No affiliate settings yet</td></tr>'}
+</table>
     </div>
 
 <script>
@@ -371,6 +446,138 @@ app.post("/admin/delete-link", async (req, res) => {
     .eq("id", campaignId);
 
   res.redirect("/admin/" + campaignId);
+});
+
+app.post("/admin/affiliate-setting", async (req, res) => {
+  const { source, approval_percentage } = req.body;
+
+  const percentage = Number(approval_percentage);
+
+  if (!source || Number.isNaN(percentage) || percentage < 0 || percentage > 100) {
+    return res.status(400).send("Invalid affiliate setting");
+  }
+
+  const { error } = await supabase
+    .from("affiliate_settings")
+    .upsert(
+      {
+        source: source,
+        approval_percentage: percentage
+      },
+      {
+        onConflict: "source"
+      }
+    );
+
+  if (error) {
+    return res.send("Error saving affiliate setting: " + error.message);
+  }
+
+  res.redirect("/admin");
+});
+
+app.get("/conversion", async (req, res) => {
+  try {
+    const clickid = String(req.query.clickid || "").trim();
+    const source = String(req.query.source || "").trim();
+
+    if (!clickid) {
+      return res.status(400).json({
+        error: "Missing clickid"
+      });
+    }
+
+    if (!source) {
+      return res.status(400).json({
+        error: "Missing source"
+      });
+    }
+
+    // Check if this click has already been processed
+    const { data: existing, error: existingError } = await supabase
+      .from("conversion_decisions")
+      .select("*")
+      .eq("clickid", clickid)
+      .maybeSingle();
+
+    if (existingError) {
+      throw existingError;
+    }
+
+    let approved;
+
+    if (existing) {
+      approved = existing.approved;
+    } else {
+      // Get this affiliate's configured percentage
+      const { data: setting, error: settingError } = await supabase
+        .from("affiliate_settings")
+        .select("approval_percentage")
+        .eq("source", source)
+        .maybeSingle();
+
+      if (settingError) {
+        throw settingError;
+      }
+
+      // If affiliate has no setting, default to 100%
+      const percentage = setting
+        ? Number(setting.approval_percentage)
+        : 100;
+
+      approved = Math.random() * 100 < percentage;
+
+      // Save the decision
+      const { error: insertError } = await supabase
+        .from("conversion_decisions")
+        .insert({
+          clickid: clickid,
+          source: source,
+          approved: approved
+        });
+
+      if (insertError) {
+        throw insertError;
+      }
+    }
+
+    if (!approved) {
+      console.log("Conversion not sent to Binom:", source, clickid);
+
+      return res.json({
+        ok: true,
+        approved: false
+      });
+    }
+
+    // Send approved conversion to Binom
+    const binomUrl =
+      "http://trackingpower4.com/click" +
+      "?cnv_id=" +
+      encodeURIComponent(clickid);
+
+    const binomResponse = await fetch(binomUrl);
+    const binomText = await binomResponse.text();
+
+    console.log(
+      "Binom postback:",
+      binomResponse.status,
+      binomText
+    );
+
+    return res.json({
+      ok: true,
+      approved: true,
+      binomStatus: binomResponse.status
+    });
+
+  } catch (error) {
+    console.error("Conversion processing error:", error);
+
+    return res.status(500).json({
+      error: "Conversion processing failed"
+    });
+  }
 });
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
