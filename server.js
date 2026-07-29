@@ -688,4 +688,184 @@ if (updateError) {
   }
 });
 
+// --------------------------------------------------
+// XOLVIS WEBHOOK -> TRACKINGPOWER2 -> BINOM
+// --------------------------------------------------
+
+app.post("/xolvis-webhook", async (req, res) => {
+  try {
+    const data = req.body;
+
+    console.log("XOLVIS WEBHOOK RECEIVED:");
+    console.log(JSON.stringify(data, null, 2));
+
+    // Only process successful payments
+    const isSuccessful =
+      String(data?.result || "").toUpperCase() === "OK" ||
+      String(data?.result || "").toUpperCase() === "SUCCESS" ||
+      String(data?.returnType || "").toUpperCase() === "FINISHED" ||
+      String(data?.returnType || "").toUpperCase() === "SUCCESS" ||
+      String(data?.status || "").toUpperCase() === "FINISHED" ||
+      String(data?.status || "").toUpperCase() === "SUCCESS" ||
+      String(data?.transaction?.status || "").toUpperCase() === "FINISHED" ||
+      String(data?.transaction?.status || "").toUpperCase() === "SUCCESS";
+
+    if (!isSuccessful) {
+      console.log("Xolvis webhook ignored: payment not successful");
+
+      return res.json({
+        ok: true,
+        ignored: true,
+        reason: "not_successful"
+      });
+    }
+
+    // Try to read tracking values from the Xolvis webhook
+    const clickid = String(
+      data?.clickid ||
+      data?.parameters?.clickid ||
+      data?.extraData?.clickid ||
+      ""
+    ).trim();
+
+    const source = String(
+      data?.affiliate_source ||
+      data?.parameters?.affiliate_source ||
+      data?.extraData?.affiliate_source ||
+      ""
+    ).trim();
+
+    console.log("XOLVIS TRACKING DATA:", {
+      clickid,
+      source
+    });
+
+    if (!clickid || !source) {
+      console.error("Xolvis webhook missing tracking data:", {
+        clickid,
+        source
+      });
+
+      return res.status(400).json({
+        error: "Missing tracking data",
+        clickid: clickid || null,
+        affiliate_source: source || null
+      });
+    }
+
+    // Check whether this conversion was already processed
+    const { data: existing, error: existingError } = await supabase
+      .from("conversion_decisions")
+      .select("*")
+      .eq("clickid", clickid)
+      .maybeSingle();
+
+    if (existingError) {
+      throw existingError;
+    }
+
+    // Prevent duplicate Xolvis webhooks from creating duplicate conversions
+    if (existing) {
+      console.log("Conversion already processed:", clickid);
+
+      return res.json({
+        ok: true,
+        duplicate: true,
+        approved: existing.approved
+      });
+    }
+
+    // Get affiliate percentage
+    const { data: setting, error: settingError } = await supabase
+      .from("affiliate_settings")
+      .select("approval_percentage")
+      .eq("source", source)
+      .maybeSingle();
+
+    if (settingError) {
+      throw settingError;
+    }
+
+    const percentage = setting
+      ? Number(setting.approval_percentage)
+      : 100;
+
+    const approved = Math.random() * 100 < percentage;
+
+    // Record EVERY successful conversion
+    const { error: insertError } = await supabase
+      .from("conversion_decisions")
+      .insert({
+        clickid: clickid,
+        source: source,
+        approved: approved
+      });
+
+    if (insertError) {
+      throw insertError;
+    }
+
+    // Scrubbed conversion: record it, but don't send to Binom
+    if (!approved) {
+      console.log(
+        "Xolvis conversion recorded but not sent to Binom:",
+        source,
+        clickid
+      );
+
+      return res.json({
+        ok: true,
+        approved: false
+      });
+    }
+
+    // Approved conversion -> Binom
+    const binomUrl =
+      "http://trackingpower4.com/click" +
+      "?cnv_id=" +
+      encodeURIComponent(clickid);
+
+    const binomResponse = await fetch(binomUrl);
+    const binomText = await binomResponse.text();
+
+    const { error: updateError } = await supabase
+      .from("conversion_decisions")
+      .update({
+        binom_sent: binomResponse.ok,
+        binom_status: binomResponse.status,
+        binom_response: binomText,
+        binom_sent_at: binomResponse.ok
+          ? new Date().toISOString()
+          : null
+      })
+      .eq("clickid", clickid);
+
+    if (updateError) {
+      console.error(
+        "Error updating conversion reporting:",
+        updateError
+      );
+    }
+
+    console.log(
+      "Binom postback:",
+      binomResponse.status,
+      binomText
+    );
+
+    return res.json({
+      ok: true,
+      approved: true,
+      binomStatus: binomResponse.status
+    });
+
+  } catch (error) {
+    console.error("Xolvis webhook processing error:", error);
+
+    return res.status(500).json({
+      error: "Xolvis webhook processing failed"
+    });
+  }
+});
+
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
