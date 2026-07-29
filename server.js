@@ -40,6 +40,28 @@ function escapeHtml(str) {
   }[m]));
 }
 
+async function getDeterministicApproval(source, percentage) {
+  const { count, error } = await supabase
+    .from("conversion_decisions")
+    .select("*", { count: "exact", head: true })
+    .eq("source", source);
+
+  if (error) {
+    throw error;
+  }
+
+  const conversionNumber = (count || 0) + 1;
+
+  const approved =
+    Math.floor(((conversionNumber + 1) * percentage) / 100) >
+    Math.floor((conversionNumber * percentage) / 100);
+
+  return {
+    approved,
+    conversionNumber
+  };
+}
+
 // --- pages ---
 app.get("/", (req, res) => {
   res.status(200).send("");
@@ -618,7 +640,15 @@ const percentage = setting
   ? Number(setting.approval_percentage)
   : 100;
 
-const approved = Math.random() * 100 < percentage;
+const { approved, conversionNumber } =
+  await getDeterministicApproval(source, percentage);
+
+console.log("Deterministic conversion decision:", {
+  source,
+  percentage,
+  conversionNumber,
+  approved
+});
 
 // Save the decision
 const { error: insertError } = await supabase
@@ -789,7 +819,15 @@ const source = String(
       ? Number(setting.approval_percentage)
       : 100;
 
-    const approved = Math.random() * 100 < percentage;
+    const { approved, conversionNumber } =
+  await getDeterministicApproval(source, percentage);
+
+console.log("Deterministic conversion decision:", {
+  source,
+  percentage,
+  conversionNumber,
+  approved
+});
 
     // Record EVERY successful conversion
     const { error: insertError } = await supabase
