@@ -722,11 +722,12 @@ app.post("/xolvis-webhook", async (req, res) => {
 
     // Try to read tracking values from the Xolvis webhook
     const clickid = String(
-      data?.clickid ||
-      data?.parameters?.clickid ||
-      data?.extraData?.clickid ||
-      ""
-    ).trim();
+  req.query.clickid || ""
+).trim();
+
+const source = String(
+  req.query.affiliate_source || ""
+).trim();
 
     const source = String(
       data?.affiliate_source ||
