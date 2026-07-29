@@ -593,42 +593,46 @@ app.all("/conversion", async (req, res) => {
       throw existingError;
     }
 
-    let approved;
+    
+if (existing) {
+  console.log("Duplicate conversion ignored:", clickid);
 
-    if (existing) {
-      approved = existing.approved;
-    } else {
-      // Get this affiliate's configured percentage
-      const { data: setting, error: settingError } = await supabase
-        .from("affiliate_settings")
-        .select("approval_percentage")
-        .eq("source", source)
-        .maybeSingle();
+  return res.json({
+    ok: true,
+    duplicate: true
+  });
+}
 
-      if (settingError) {
-        throw settingError;
-      }
+// Get this affiliate's configured percentage
+const { data: setting, error: settingError } = await supabase
+  .from("affiliate_settings")
+  .select("approval_percentage")
+  .eq("source", source)
+  .maybeSingle();
 
-      // If affiliate has no setting, default to 100%
-      const percentage = setting
-        ? Number(setting.approval_percentage)
-        : 100;
+if (settingError) {
+  throw settingError;
+}
 
-      approved = Math.random() * 100 < percentage;
+// If affiliate has no setting, default to 100%
+const percentage = setting
+  ? Number(setting.approval_percentage)
+  : 100;
 
-      // Save the decision
-      const { error: insertError } = await supabase
-        .from("conversion_decisions")
-        .insert({
-          clickid: clickid,
-          source: source,
-          approved: approved
-        });
+const approved = Math.random() * 100 < percentage;
 
-      if (insertError) {
-        throw insertError;
-      }
-    }
+// Save the decision
+const { error: insertError } = await supabase
+  .from("conversion_decisions")
+  .insert({
+    clickid: clickid,
+    source: source,
+    approved: approved
+  });
+
+if (insertError) {
+  throw insertError;
+}
 
     if (!approved) {
       console.log("Conversion not sent to Binom:", source, clickid);
