@@ -729,12 +729,7 @@ const source = String(
   req.query.affiliate_source || ""
 ).trim();
 
-    const source = String(
-      data?.affiliate_source ||
-      data?.parameters?.affiliate_source ||
-      data?.extraData?.affiliate_source ||
-      ""
-    ).trim();
+    
 
     console.log("XOLVIS TRACKING DATA:", {
       clickid,
