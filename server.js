@@ -564,7 +564,11 @@ app.post("/admin/affiliate-setting", async (req, res) => {
 app.get("/conversion", async (req, res) => {
   try {
     const clickid = String(req.query.clickid || "").trim();
-    const source = String(req.query.source || "").trim();
+    const source = String(
+  req.query.affiliate_source ||
+  req.query.source ||
+  ""
+).trim();
 
     if (!clickid) {
       return res.status(400).json({
