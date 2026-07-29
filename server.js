@@ -42,8 +42,7 @@ function escapeHtml(str) {
 
 // --- pages ---
 app.get("/", (req, res) => {
-  res.send(`Splitter running 🚀<br><br>
-  Go to <a href="/admin">/admin</a> to create campaigns.`);
+  res.status(200).send("");
 });
 
 app.get("/admin", async (req, res) => {
