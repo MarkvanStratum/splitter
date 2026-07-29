@@ -561,7 +561,7 @@ app.post("/admin/affiliate-setting", async (req, res) => {
   res.redirect("/admin");
 });
 
-app.get("/conversion", async (req, res) => {
+app.all("/conversion", async (req, res) => {
   try {
     const clickid = String(req.query.clickid || "").trim();
     const source = String(
